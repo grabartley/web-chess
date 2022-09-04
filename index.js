@@ -401,11 +401,11 @@ class WebChess {
   }
   
   handleSpaceClicked(event) {
-    if (!this.state === State.PLAY || this.turnInProgress) {
+    if (this.state !== State.PLAY || this.turnInProgress) {
       return;
     }
+    const clickedSpace = this.board.getSpaceById(event.target.id);
     if (!this.currentSpace) {
-      const clickedSpace = this.board.getSpaceById(event.target.id);
       if (!clickedSpace.hasPiece() || clickedSpace.piece.isWhite !== this.isWhiteTurn) {
         return;
       }
@@ -420,18 +420,28 @@ class WebChess {
     } else if (this.currentSpace.target.id === event.target.id) {
       this.clearSpaceSelect();
     } else if (!this.proposedSpace) {
-      document.getElementById(event.target.id).classList.add('selected');
-      this.proposedSpace = event;
+      if (clickedSpace.hasPiece() && clickedSpace.piece.isWhite === this.isWhiteTurn) {
+        this.clearSpaceSelect();
+        return this.handleSpaceClicked(event);
+      } else {
+        this.proposedSpace = event;
+      }
     }
     if (this.currentSpace && this.proposedSpace) {
-      this.handleTurn();
+      const currentSpace = this.board.getSpaceById(this.currentSpace.target.id);
+      const proposedSpace = this.board.getSpaceById(this.proposedSpace.target.id);
+      if (this.isValidMove(currentSpace, proposedSpace)) {
+        this.handleTurn(currentSpace, proposedSpace);
+      } else {
+        this.proposedSpace = null;
+      }
     }
   }
 
-  handleTurn() {
+  handleTurn(currentSpace, proposedSpace) {
     this.turnInProgress = true;
     try {
-      this.takeTurn();
+      this.takeTurn(currentSpace, proposedSpace);
     } finally {
       this.updateBoard();
       this.clearSpaceSelect();
@@ -449,40 +459,27 @@ class WebChess {
       this.currentSpace = null;
     }
     if (this.proposedSpace) {
-      document.getElementById(this.proposedSpace.target.id).classList.remove('selected');
       this.proposedSpace = null;
     }
   }
   
-  takeTurn() {
-    const currentSpace = this.board.getSpaceById(this.currentSpace.target.id);
-    const proposedSpace = this.board.getSpaceById(this.proposedSpace.target.id);
+  takeTurn(currentSpace, proposedSpace) {
     console.log(`Attempting to move ${currentSpace.v}${currentSpace.h} to ${proposedSpace.v}${proposedSpace.h}...`);
-    const selectedPieceExistsAndIsYours = 
-      currentSpace.hasPiece() &&
-      currentSpace.piece.isWhite == this.isWhiteTurn;
-    
-    if (selectedPieceExistsAndIsYours) {
-      const pieceToMove = currentSpace.piece;
-      const isMovingIntoCheck = this.isMovingIntoCheck(pieceToMove, currentSpace, proposedSpace);
-      const isMoveValid = pieceToMove.isValidMove(currentSpace, proposedSpace, this.board) && !isMovingIntoCheck;
-      if (isMoveValid) {
-        const capturedPiece = pieceToMove.move(currentSpace, proposedSpace);
-        if (capturedPiece) {
-          this.performCapture(capturedPiece);
-        }
-        if (this.isInCheckmate(!this.isWhiteTurn)) {
-          console.log('CHECKMATE');
-          this.handleCheckmate();
-          return;
-        }
-        if (this.isInCheck(!this.isWhiteTurn)) {
-          console.log('CHECK');
-        }
-        this.isWhiteTurn = !this.isWhiteTurn;
-        return;
-      }
+    const capturedPiece = currentSpace.piece.move(currentSpace, proposedSpace);
+    if (capturedPiece) {
+      this.performCapture(capturedPiece);
     }
+    if (this.isInCheckmate(!this.isWhiteTurn)) {
+      this.playSound('checkmate', 0.75);
+      console.log('CHECKMATE');
+      this.handleCheckmate();
+      return;
+    }
+    if (this.isInCheck(!this.isWhiteTurn)) {
+      this.playSound('check', 0.75);
+      console.log('CHECK');
+    }
+    this.isWhiteTurn = !this.isWhiteTurn;
   }
 
   updateBoard() {
@@ -494,6 +491,11 @@ class WebChess {
         spaceEl.innerText = '';
       }
     });
+    this.updateGraveyards();
+    this.rotateBoard();
+  }
+
+  updateGraveyards() {
     if (this.isWhiteTurn) {
       const whiteGraveyardEl = document.getElementById('back-left');
       whiteGraveyardEl.innerText = '';
@@ -507,14 +509,31 @@ class WebChess {
         blackGraveyardEl.innerText = blackGraveyardEl.innerText + capturedPiece.emoji;
       }
     }
+  }
+
+  rotateBoard() {
     const boardEl = document.getElementById('board');
     const rotation = this.isWhiteTurn ? '' : 'rotate(180deg)';
+    this.playSound('whoosh');
     boardEl.style.transform = rotation;
     boardEl.childNodes.forEach(childNode => {
       if (childNode && childNode.style) {
         childNode.style.transform = rotation;
       }
     });
+  }
+
+  isValidMove(currentSpace, proposedSpace) {
+    const selectedPieceExistsAndIsYours = 
+      currentSpace.hasPiece() &&
+      currentSpace.piece.isWhite == this.isWhiteTurn;
+    
+    if (selectedPieceExistsAndIsYours) {
+      const isMovingIntoCheck = this.isMovingIntoCheck(currentSpace.piece, currentSpace, proposedSpace);
+      return currentSpace.piece.isValidMove(currentSpace, proposedSpace, this.board) && !isMovingIntoCheck;
+    }
+
+    return false;
   }
 
   isMovingIntoCheck(piece, currentSpace, proposedSpace) {
@@ -529,6 +548,8 @@ class WebChess {
   }
 
   performCapture(piece) {
+    const attackSoundNum = Math.ceil(Math.random() * 3);
+    this.playSound(`attack${attackSoundNum}`);
     if (this.isWhiteTurn) {
       this.capturedBlackPieces.push(piece);
     } else {
@@ -570,6 +591,12 @@ class WebChess {
     this.state = State.CHECKMATE;
     alert(`Game Over! ${this.isWhiteTurn ? 'White' : 'Black'} is the winner!`);
   }
+
+  playSound(assetPath, volume = 0.5) {
+    const audioAsset = new Audio(`./assets/sound/${assetPath}.mp3`);
+    audioAsset.volume = volume;
+    return audioAsset.play();
+  }
 }
 
 /* create the main game object */
@@ -589,8 +616,6 @@ function onDOMContentLoaded() {
     addClickEvent(`g${i}`);
     addClickEvent(`h${i}`);
   }
-  const setupPieces = new Audio('https://cdn.pixabay.com/download/audio/2022/03/10/audio_142ea46095.mp3?filename=board-start-38127.mp3');
-  setupPieces.play();
 }
 function addClickEvent(id) {
   document.getElementById(id).addEventListener('click', webChess.handleSpaceClicked.bind(webChess));
