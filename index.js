@@ -411,7 +411,9 @@ class WebChess {
       }
       clickedSpace.piece.calculateValidMoveSet(clickedSpace, this.board);
       for (const validMoveSpace of clickedSpace.piece.validMoveSet) {
-        document.getElementById(validMoveSpace.getId()).classList.add('valid-move');
+        if (!this.isMovingIntoCheck(clickedSpace.piece, clickedSpace, validMoveSpace)) {
+          document.getElementById(validMoveSpace.getId()).classList.add('valid-move');
+        }
       }
       document.getElementById(event.target.id).classList.add('selected');
       this.currentSpace = event;
