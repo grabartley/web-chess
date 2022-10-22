@@ -43,6 +43,23 @@ class Board {
     this.board[7][7].piece = new Rook(false);
   }
 
+  simulateMove(move) {
+    const movedPiece = move.from.piece;
+    const capturedPiece = move.to.hasPiece() ? move.to.piece : null;
+    move.from.piece = null;
+    move.to.piece = movedPiece;
+    // recalculate valid move sets when making a move
+    CommonUtil.calculateValidMoveSets(this);
+    return capturedPiece;
+  }
+
+  move(move) {
+    const capturedPiece = this.simulateMove(move);
+    move.to.piece.hasMoved = true;
+    CommonUtil.playSound('move-piece', 0.4);
+    return capturedPiece;
+  }
+
   getSpaceById(id) {
     if (!id || id.length !== 2) {
       return null;
@@ -69,15 +86,15 @@ class Board {
     return this.getActiveSpacesForPlayer(isWhiteTurn).filter(space => space.piece instanceof pieceType);
   }
 
-  isPathClear(currentSpace, proposedSpace) {
-    return !this.getSpacesBetween(currentSpace, proposedSpace).some(space => space.hasPiece());
+  isPathClear(move) {
+    return !this.getSpacesBetween(move).some(space => space.hasPiece());
   }
 
-  getSpacesBetween(currentSpace, proposedSpace) {
-    const currentHIndex = CommonUtil.getHIndexBySpace(currentSpace);
-    const currentVIndex = CommonUtil.getVIndexBySpace(currentSpace);
-    const hDiff = CommonUtil.getHDiff(currentSpace, proposedSpace);
-    const vDiff = CommonUtil.getVDiff(currentSpace, proposedSpace);
+  getSpacesBetween(move) {
+    const currentHIndex = CommonUtil.getHIndexBySpace(move.from);
+    const currentVIndex = CommonUtil.getVIndexBySpace(move.from);
+    const hDiff = CommonUtil.getHDiff(move);
+    const vDiff = CommonUtil.getVDiff(move);
     const isSameSpace = hDiff == 0 && vDiff == 0;
     const isAdjacentSpace = hDiff == 1 || hDiff == -1 || vDiff == 1 || vDiff == -1;
     const isDiagonalSpace = Math.abs(hDiff) == Math.abs(vDiff);

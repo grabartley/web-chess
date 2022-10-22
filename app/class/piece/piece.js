@@ -5,35 +5,24 @@ class Piece {
     }
   }
 
-  simulateMove(currentSpace, proposedSpace) {
-    const capturedPiece = proposedSpace.hasPiece() ? proposedSpace.piece : null;
-    currentSpace.piece = null;
-    proposedSpace.piece = this;
-    return capturedPiece;
-  }
-
-  move(currentSpace, proposedSpace) {
-    const capturedPiece = this.simulateMove(currentSpace, proposedSpace);
-    this.hasMoved = true;
-    return capturedPiece;
-  }
-
   calculateValidMoveSet(currentSpace, board) {
-    this.validMoveSet = board.allSpaces.filter(space => this.isValidMove(currentSpace, space, board));
+    this.validMoveSet = board.allSpaces
+      .map((space) => new Move(currentSpace, space))
+      .filter(move => this.isValidMove(move, board));
   }
 
   isValidMoveInternal(hDiff, vDiff, isCapturing) {}
 
-  isValidMove(currentSpace, proposedSpace, board) {
-    const capturingYourOwnPiece = proposedSpace.hasPiece() && proposedSpace.piece.isWhite == this.isWhite;
-    const pathIsBlockedAndCantJump = !this.isAbleToJump && !board.isPathClear(currentSpace, proposedSpace);
+  isValidMove(move, board) {
+    const capturingYourOwnPiece = move.to.hasPiece() && move.to.piece.isWhite == this.isWhite;
+    const pathIsBlockedAndCantJump = !this.isAbleToJump && !board.isPathClear(move);
     if (capturingYourOwnPiece || pathIsBlockedAndCantJump) {
       return false;
     }
 
-    const hDiff = CommonUtil.getHDiff(currentSpace, proposedSpace);
-    const vDiff = CommonUtil.getVDiff(currentSpace, proposedSpace);
+    const hDiff = CommonUtil.getHDiff(move);
+    const vDiff = CommonUtil.getVDiff(move);
 
-    return this.isValidMoveInternal(hDiff, vDiff, proposedSpace.hasPiece());
+    return this.isValidMoveInternal(hDiff, vDiff, move.to.hasPiece());
   }
 }
