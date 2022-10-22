@@ -8,24 +8,18 @@ class WebChess {
     this.proposedSpace = null;
     this.capturedWhitePieces = [];
     this.capturedBlackPieces = [];
+    this.aiOpponent = new NormalAI();
   }
 
   play() {
+    // prevented by https://goo.gl/xX8pDD
+    // CommonUtil.playSound('setup');
     this.board.setUpPieces();
+    CommonUtil.calculateValidMoveSets(this.board);
   }
 
-  showMenu() {
-    // noop
-    console.error("Not implemented yet.");
-  }
-  
-  newGame() {
-    // noop
-    console.error("Not implemented yet.");
-  }
-  
   handleSpaceClicked(event) {
-    if (this.state !== State.PLAY || this.turnInProgress) {
+    if (!this.isWhiteTurn || this.state !== State.PLAY || this.turnInProgress) {
       return;
     }
     const clickedSpace = this.board.getSpaceById(event.target.id);
@@ -33,10 +27,9 @@ class WebChess {
       if (!clickedSpace.hasPiece() || clickedSpace.piece.isWhite !== this.isWhiteTurn) {
         return;
       }
-      clickedSpace.piece.calculateValidMoveSet(clickedSpace, this.board);
-      for (const validMoveSpace of clickedSpace.piece.validMoveSet) {
-        if (!this.isMovingIntoCheck(clickedSpace.piece, clickedSpace, validMoveSpace)) {
-          document.getElementById(validMoveSpace.getId()).classList.add('valid-move');
+      for (const validMove of clickedSpace.piece.validMoveSet) {
+        if (!CommonUtil.isMovingIntoCheck(validMove, this.board)) {
+          document.getElementById(validMove.to.getId()).classList.add('valid-move');
         }
       }
       document.getElementById(event.target.id).classList.add('selected');
@@ -54,26 +47,32 @@ class WebChess {
     if (this.currentSpace && this.proposedSpace) {
       const currentSpace = this.board.getSpaceById(this.currentSpace.target.id);
       const proposedSpace = this.board.getSpaceById(this.proposedSpace.target.id);
-      if (this.isValidMove(currentSpace, proposedSpace)) {
-        this.handleTurn(currentSpace, proposedSpace);
-      } else {
+      const move = new Move(currentSpace, proposedSpace);
+      if (!this.handleTurn(move)) {
         this.proposedSpace = null;
       }
     }
   }
 
-  handleTurn(currentSpace, proposedSpace) {
+  async handleTurn(move) {
+    if (!this.isValidMove(move)) {
+      return false;
+    }
     this.turnInProgress = true;
     try {
-      this.takeTurn(currentSpace, proposedSpace);
+      this.takeTurn(move);
     } finally {
       this.updateBoard();
-      this.clearSpaceSelect();
+      await this.clearSpaceSelect();
       this.turnInProgress = false;
+      // call the AI for non-white turn
+      if (!this.isWhiteTurn) {
+        this.aiOpponent.takeTurn(this.handleTurn.bind(this), this.board);
+      }
     }
   }
 
-  clearSpaceSelect() {
+  async clearSpaceSelect() {
     if (this.currentSpace) {
       const validMoveEls = Array.from(document.getElementsByClassName('valid-move'));
       for (const validMoveEl of validMoveEls) {
@@ -85,22 +84,27 @@ class WebChess {
     if (this.proposedSpace) {
       this.proposedSpace = null;
     }
+    // sleep on non-white turn to improve game flow
+    if (!this.isWhiteTurn) {
+      await CommonUtil.sleep(2500);
+    }
   }
-  
-  takeTurn(currentSpace, proposedSpace) {
-    console.log(`Attempting to move ${currentSpace.v}${currentSpace.h} to ${proposedSpace.v}${proposedSpace.h}...`);
-    const capturedPiece = currentSpace.piece.move(currentSpace, proposedSpace);
+
+  takeTurn(move) {
+    console.log(`${this.isWhiteTurn ? 'White' : 'Black'} ${move.from.v}${move.from.h} to ${move.to.v}${move.to.h}...`);
+    const capturedPiece = this.board.move(move);
     if (capturedPiece) {
       this.performCapture(capturedPiece);
     }
-    if (this.isInCheckmate(!this.isWhiteTurn)) {
-      this.playSound('checkmate', 0.75);
+    CommonUtil.calculateValidMoveSets(this.board);
+    if (CommonUtil.isInCheckmate(!this.isWhiteTurn, this.board)) {
+      CommonUtil.playSound('checkmate', 0.5);
       console.log('CHECKMATE');
       this.handleCheckmate();
       return;
     }
-    if (this.isInCheck(!this.isWhiteTurn)) {
-      this.playSound('check', 0.75);
+    if (CommonUtil.isInCheck(!this.isWhiteTurn, this.board)) {
+      CommonUtil.playSound('check');
       console.log('CHECK');
     }
     this.isWhiteTurn = !this.isWhiteTurn;
@@ -116,7 +120,8 @@ class WebChess {
       }
     });
     this.updateGraveyards();
-    this.rotateBoard();
+    // commenting out board rotation for now due to AI usage
+    // this.rotateBoard();
   }
 
   updateGraveyards() {
@@ -138,7 +143,7 @@ class WebChess {
   rotateBoard() {
     const boardEl = document.getElementById('board');
     const rotation = this.isWhiteTurn ? '' : 'rotate(180deg)';
-    this.playSound('whoosh');
+    CommonUtil.playSound('whoosh');
     boardEl.style.transform = rotation;
     boardEl.childNodes.forEach(childNode => {
       if (childNode && childNode.style) {
@@ -147,33 +152,22 @@ class WebChess {
     });
   }
 
-  isValidMove(currentSpace, proposedSpace) {
-    const selectedPieceExistsAndIsYours = 
-      currentSpace.hasPiece() &&
-      currentSpace.piece.isWhite == this.isWhiteTurn;
-    
-    if (selectedPieceExistsAndIsYours) {
-      const isMovingIntoCheck = this.isMovingIntoCheck(currentSpace.piece, currentSpace, proposedSpace);
-      return currentSpace.piece.isValidMove(currentSpace, proposedSpace, this.board) && !isMovingIntoCheck;
+  isValidMove(move) {
+    // additional checks before passing to piece checks
+    const selectedPieceExistsAndIsYours =
+      move.from.hasPiece() &&
+      move.from.piece.isWhite == this.isWhiteTurn;
+    const isNotCapturingKing = !(move.to.hasPiece() && move.to.piece instanceof King);
+
+    if (selectedPieceExistsAndIsYours && isNotCapturingKing) {
+      return move.from.piece.isValidMove(move, this.board);
     }
 
     return false;
   }
 
-  isMovingIntoCheck(piece, currentSpace, proposedSpace) {
-    const capturedPiece = piece.simulateMove(currentSpace, proposedSpace);
-    const isPieceMovingIntoCheck = this.isInCheck(piece.isWhite);
-    piece.simulateMove(proposedSpace, currentSpace);
-    // put the captured piece back in place
-    if (capturedPiece) {
-      proposedSpace.piece = capturedPiece;
-    }
-    return isPieceMovingIntoCheck;
-  }
-
   performCapture(piece) {
-    const attackSoundNum = Math.ceil(Math.random() * 3);
-    this.playSound(`attack${attackSoundNum}`);
+    CommonUtil.playSound('attack');
     if (this.isWhiteTurn) {
       this.capturedBlackPieces.push(piece);
     } else {
@@ -181,44 +175,8 @@ class WebChess {
     }
   }
 
-  calculateValidMoveSets() {
-    this.board.getActiveSpaces().forEach(space => {
-      space.piece.calculateValidMoveSet(space, this.board);
-    });
-  }
-
-  isInCheckmate(isWhiteTurn) {
-    if (!this.isInCheck(isWhiteTurn)) {
-      return false;
-    }
-    const friendlySpaces = this.board.getActiveSpacesForPlayer(isWhiteTurn);
-    for (const currentSpace of friendlySpaces) {
-      const piece = currentSpace.piece;
-      const validMoveSet = piece.validMoveSet;
-      for (const proposedSpace of validMoveSet) {
-        if (!this.isMovingIntoCheck(piece, currentSpace, proposedSpace)) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  isInCheck(isWhiteTurn) {
-    this.calculateValidMoveSets();
-    const friendlyKingSpace = this.board.getSpacesContainingPiece(King, isWhiteTurn)[0];
-    const enemyPieces = this.board.getActiveSpacesForPlayer(!isWhiteTurn).map(space => space.piece);
-    return enemyPieces.some(piece => piece.validMoveSet.includes(friendlyKingSpace))
-  }
-
   handleCheckmate() {
     this.state = State.CHECKMATE;
     alert(`Game Over! ${this.isWhiteTurn ? 'White' : 'Black'} is the winner!`);
-  }
-
-  playSound(assetPath, volume = 0.5) {
-    const audioAsset = new Audio(`./assets/sound/${assetPath}.mp3`);
-    audioAsset.volume = volume;
-    return audioAsset.play();
   }
 }
